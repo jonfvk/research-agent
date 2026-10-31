@@ -17,6 +17,10 @@ LABEL = "com.jonfvk.research-agent"
 PROJECTS_PER_BATCH = 5
 MAX_BATCHES = 4
 TOPICS = [
+    "AI changelog release notes automation",
+    "prompt engineering regression testing",
+    "token usage cost estimation developer tools",
+    "agent memory and context management",
     "AI developer tools coding agents",
     "LLM evaluation testing observability",
     "AI agent frameworks MCP tooling",
@@ -63,7 +67,7 @@ def _run_batch(model: str, batches: int = 1) -> int:
         for batch in range(batches):
             print(f"Searching current AI developer trends (batch {batch + 1}/{batches})...")
             try:
-                sources = research.search_trends(topic=TOPICS[batch % len(TOPICS)])
+                sources = research.search_trends(topic=TOPICS[(batch + len(used) // 5) % len(TOPICS)])
                 ideas = research.select_projects(sources, model=model, avoid=used)
             except research.ResearchError as error:
                 print(f"Batch {batch + 1} planning failed: {error}", file=sys.stderr)

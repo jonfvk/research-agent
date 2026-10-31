@@ -152,7 +152,7 @@ def _validate_content(path: Path, content: str, local: frozenset[str] = frozense
             )
 
 
-def _read_existing(root: Path) -> list[dict[str, str]]:
+def _read_existing(root: Path, limit: int = 3000) -> list[dict[str, str]]:
     files = []
     for path in sorted(root.rglob("*")):
         if not path.is_file() or ".git" in path.parts:
@@ -162,7 +162,7 @@ def _read_existing(root: Path) -> list[dict[str, str]]:
         files.append(
             {
                 "path": path.relative_to(root).as_posix(),
-                "content": path.read_text(encoding="utf-8")[:3000],
+                "content": path.read_text(encoding="utf-8")[:limit],
             }
         )
     return files
@@ -238,7 +238,7 @@ def _safe_test(root: Path) -> str:
         if result.returncode:
             raise TestFailure(
                 f"Sandboxed tests failed (exit code {result.returncode}); project was not pushed.",
-                (result.stderr or result.stdout)[-1500:],
+                (result.stderr or result.stdout)[-3000:],
             )
         return ""
 
@@ -267,12 +267,12 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
 
     contents: dict[str, str] = {}
 
-    def commit_stage(stage: int, feedback: str = "") -> str:
+    def commit_stage(stage: int, feedback: str = "", limit: int = 3000) -> str:
         """Generate, validate (with retries) and commit one change; returns error text."""
         error = feedback
         for _ in range(3):
             result = implementation_stage(
-                idea, stage, _read_existing(root), model=model, feedback=error
+                idea, stage, _read_existing(root, limit), model=model, feedback=error
             )
             try:
                 relative = _allowed_path(result["path"])
@@ -315,14 +315,18 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
     count = int(_git(root, "rev-list", "--count", "HEAD"))
     if count < 10:
         raise BuildError("Fewer than ten real implementation commits were created.")
-    for attempt in range(4):
+    for attempt in range(7):
         try:
             _safe_test(root)
             break
         except TestFailure as failure:
-            if attempt == 3:
+            if attempt == 6:
                 raise
-            commit_stage(10, feedback=f"Tests failed:\n{failure.output}")
+            commit_stage(
+                10,
+                feedback=f"Tests failed (fix the source or the wrong test expectation):\n{failure.output}",
+                limit=12000,
+            )
             count += 1
     _git(root, "push", "--set-upstream", "origin", "main")
     return {

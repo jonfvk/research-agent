@@ -93,7 +93,7 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
         "and `source_urls` (one or more URLs from the evidence). Use unique slugs "
         "containing lowercase letters, digits, and dashes. Ensure ideas differ "
         "substantially and cite only evidence actually present in these results.\n\n"
-        f"Do not reuse these existing project slugs: {sorted(avoid)}.\n\n"
+        f"Existing projects (do NOT repeat, rename, or make -lite/-v2 variants of these ideas): {sorted(avoid)}.\n\n"
         f"Search evidence:\n{json.dumps(results, ensure_ascii=False)}"
     )
     try:
@@ -149,7 +149,7 @@ def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, 
                          *, model: str = "gpt-4.1-mini", feedback: str = "") -> dict[str, str]:
     milestone = idea["milestones"][stage] if stage < 10 else "Fix the failing tests"
     prompt = (
-        (f"Your previous output was rejected or failed: {feedback[:1500]}\n"
+        (f"Your previous output was rejected or failed: {feedback[:3500]}\n"
          "Fix it. You may output a revised version of an existing file.\n" if feedback else "")
         + f"Implement milestone {min(stage, 9) + 1} of 10 for this benign developer tool.\n"
         f"Project: {json.dumps(idea, ensure_ascii=False)}\n"
