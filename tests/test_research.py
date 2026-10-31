@@ -35,7 +35,7 @@ class ResearchTests(unittest.TestCase):
         def idea(name):
             return {
                 "name": name,
-                "title": "Local Report Tool",
+                "title": name.replace("-", " ").title(),
                 "description": "Analyze local reports",
                 "problem": "Reports take time to review",
                 "approach": "Provide deterministic summaries",
@@ -43,10 +43,13 @@ class ResearchTests(unittest.TestCase):
                 "source_urls": ["https://example.com/trend"],
             }
         ideas = [idea(f"local-report-tool-{n}") for n in range(5)]
+        sources = [{"url": "https://example.com/trend"}]
         with patch.object(
             research, "_openai_json", return_value=json.dumps({"ideas": ideas})
         ):
-            result = research.select_projects([], model="test-model")
+            for entry in ideas:
+                entry["source_urls"] = ["https://example.com/trend"]
+            result = research.select_projects(sources, model="test-model")
         self.assertEqual(len(result), 5)
 
         ideas[0]["name"] = "bad slug"
@@ -54,7 +57,7 @@ class ResearchTests(unittest.TestCase):
             research, "_openai_json", return_value=json.dumps({"ideas": ideas})
         ):
             with self.assertRaises(research.ResearchError):
-                research.select_projects([], model="test-model")
+                research.select_projects(sources, model="test-model")
 
     def test_project_plan_rejects_wrong_count(self):
         with patch.object(

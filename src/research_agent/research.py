@@ -2,6 +2,7 @@
 
 import json
 from datetime import date
+from urllib.parse import urlsplit
 
 from research_agent.credentials import OPENAI_ACCOUNT, TAVILY_ACCOUNT, load
 from research_agent.http import HTTPRequestError, json_request
@@ -99,6 +100,8 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
     if not isinstance(ideas, list) or len(ideas) != 5:
         raise ResearchError("The project planner must return exactly five ideas.")
     names = set()
+    titles = set()
+    known_urls = {item["url"] for item in results if isinstance(item, dict) and item.get("url")}
     for idea in ideas:
         if not isinstance(idea, dict) or not {"name", "title", "description", "problem", "approach", "milestones", "source_urls"} <= idea.keys():
             raise ResearchError("Project plan is missing required fields.")
@@ -108,9 +111,32 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
         if name in names:
             raise ResearchError("Project slugs must be unique.")
         names.add(name)
+        title = idea["title"]
+        if not isinstance(title, str) or not title.strip() or title.casefold() in titles:
+            raise ResearchError("Project titles must be nonempty and distinct.")
+        titles.add(title.casefold())
+        for field, limit in (("description", 300), ("problem", 1000), ("approach", 1000)):
+            value = idea[field]
+            if not isinstance(value, str) or not value.strip() or len(value) > limit:
+                raise ResearchError(f"Project field {field} is empty or too long.")
         if not isinstance(idea["milestones"], list) or len(idea["milestones"]) != 10:
             raise ResearchError("Every project needs ten meaningful implementation milestones.")
-        if not isinstance(idea["source_urls"], list) or not idea["source_urls"]:
+        milestones = idea["milestones"]
+        if (
+            any(not isinstance(item, str) or not item.strip() or len(item) > 200 for item in milestones)
+            or len({item.casefold() for item in milestones if isinstance(item, str)}) != 10
+        ):
+            raise ResearchError("Implementation milestones must be distinct and descriptive.")
+        if (
+            not isinstance(idea["source_urls"], list)
+            or not idea["source_urls"]
+            or any(
+                not isinstance(url, str)
+                or url not in known_urls
+                or urlsplit(url).scheme != "https"
+                for url in idea["source_urls"]
+            )
+        ):
             raise ResearchError("Every project must cite trend research.")
     return ideas
 
