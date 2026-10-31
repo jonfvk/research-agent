@@ -22,7 +22,7 @@ _SECRET = re.compile(
 _BLOCKED_MODULES = {
     "subprocess", "socket", "http", "urllib3", "requests", "httpx", "aiohttp",
     "pickle", "marshal", "keyring", "dotenv", "ctypes", "importlib", "ftplib",
-    "smtplib", "telnetlib", "xmlrpc", "multiprocessing", "pty", "shutil",
+    "smtplib", "telnetlib", "xmlrpc", "multiprocessing", "pty",
 }
 _BLOCKED_CALLS = {"eval", "exec", "compile", "__import__", "open_url"}
 _BLOCKED_ATTRS = {"system", "popen", "spawn", "urlopen", "urlretrieve", "rmtree"}

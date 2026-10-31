@@ -71,6 +71,11 @@ class BuilderSafetyTests(unittest.TestCase):
     def test_allows_harmless_words_in_text(self):
         _validate_content(Path("src/tool/core.py"), '"""Execute and exec the plan; request data."""\nimport urllib.parse\n')
 
+    def test_allows_shutil_but_not_rmtree(self):
+        _validate_content(Path("src/tool/core.py"), "import shutil\nshutil.copy('a', 'b')\n")
+        with self.assertRaises(BuildError):
+            _validate_content(Path("src/tool/core.py"), "import shutil\nshutil.rmtree('a')\n")
+
     def test_commit_message_is_sanitized(self):
         from research_agent.builder import _clean_commit_message
         self.assertEqual(_clean_commit_message("\u2728 Add parser, v2!\nbody"), "Add parser v2")

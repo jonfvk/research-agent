@@ -161,7 +161,7 @@ def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, 
         "README.md, pyproject.toml, .gitignore, src/<package>/<file>.py, "
         "tests/test_<name>.py, and docs/<name>.md. Never output shell scripts, "
         "workflow files, network exploit code, credential handling, or commands. "
-        "Use only the Python standard library; the code must be fully offline (no network, subprocess, "
+        "Use only the Python standard library (for temp files in tests use tempfile.TemporaryDirectory, never shutil.rmtree); the code must be fully offline (no network, subprocess, "
         "file deletion, or dynamic code execution) and tests must use unittest. "
         "Tests import the package as `from <package> import <module>` (src/ is on the path); "
         "`__init__.py` files are allowed. Keep each file under 250 lines. "
