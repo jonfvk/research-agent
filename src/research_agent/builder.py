@@ -15,7 +15,7 @@ from research_agent.research import implementation_stage
 
 _REPO = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _COMMIT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._():/-]{0,71}$")
-_PYTHON_FILE = re.compile(r"^[a-z][a-z0-9_]*\.py$")
+_PYTHON_FILE = re.compile(r"^(?:[a-z][a-z0-9_]*|__init__)\.py$")
 _SECRET = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|tvly-[A-Za-z0-9_-]{16,})"
 )
@@ -208,7 +208,7 @@ def _safe_test(root: Path) -> str:
             "TMPDIR": str(isolated_root / ".test-tmp"),
             "PYTHONNOUSERSITE": "1",
             "PYTHONDONTWRITEBYTECODE": "1",
-            "PYTHONPATH": str(isolated_root),
+            "PYTHONPATH": f"{isolated_root}:{isolated_root / 'src'}",
         }
         (isolated_root / ".test-home").mkdir()
         (isolated_root / ".test-tmp").mkdir()

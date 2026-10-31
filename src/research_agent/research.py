@@ -163,11 +163,13 @@ def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, 
         "workflow files, network exploit code, credential handling, or commands. "
         "Use only the Python standard library; the code must be fully offline (no network, subprocess, "
         "file deletion, or dynamic code execution) and tests must use unittest. "
+        "Tests import the package as `from <package> import <module>` (src/ is on the path); "
+        "`__init__.py` files are allowed. Keep each file under 250 lines. "
         "commit_message must be plain ASCII, imperative, under 60 characters. "
         "Include source URLs and dates in README.md. Keep all paths relative."
     )
     try:
-        result = json.loads(_openai_json(prompt, model=model, max_tokens=2500))
+        result = json.loads(_openai_json(prompt, model=model, max_tokens=4500))
     except json.JSONDecodeError:
         raise ResearchError("Implementation model returned invalid JSON.") from None
     if not isinstance(result, dict) or not all(

@@ -38,6 +38,7 @@ class BuilderSafetyTests(unittest.TestCase):
             "src/report_tool/core.py",
             "tests/test_core.py",
             "docs/design.md",
+            "src/report_tool/__init__.py",
         ):
             with self.subTest(path=value):
                 self.assertEqual(_allowed_path(value), Path(value))
