@@ -56,7 +56,10 @@ def _run_batch(model: str, batches: int = 1) -> int:
             "projects": [],
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        used: set[str] = set()
+        projects_dir = Path.home() / "Documents" / "AI-Dev-Projects"
+        used: set[str] = (
+            {item.name for item in projects_dir.iterdir()} if projects_dir.is_dir() else set()
+        )
         for batch in range(batches):
             print(f"Searching current AI developer trends (batch {batch + 1}/{batches})...")
             try:

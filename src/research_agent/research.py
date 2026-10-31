@@ -85,7 +85,8 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
     prompt = (
         f"Today's date is {date.today().isoformat()}. From these search results, "
         "select five distinct, realistic AI developer project ideas suitable for "
-        "one-day implementations. Return JSON with an `ideas` array of exactly five "
+        "one-day implementations that are pure offline Python standard-library tools "
+        "(no network servers/clients, no subprocesses, no file deletion). Return JSON with an `ideas` array of exactly five "
         "objects, each containing `name` (short repository slug), `title`, "
         "`description` (under 300 chars), `problem`, `approach`, `milestones` "
         "(exactly ten distinct meaningful incremental implementation stages), "
@@ -145,10 +146,12 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
 
 
 def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, str]],
-                         *, model: str = "gpt-4.1-mini") -> dict[str, str]:
-    milestone = idea["milestones"][stage]
+                         *, model: str = "gpt-4.1-mini", feedback: str = "") -> dict[str, str]:
+    milestone = idea["milestones"][stage] if stage < 10 else "Fix the failing tests"
     prompt = (
-        f"Implement milestone {stage + 1} of 10 for this benign developer tool.\n"
+        (f"Your previous output was rejected or failed: {feedback[:1500]}\n"
+         "Fix it. You may output a revised version of an existing file.\n" if feedback else "")
+        + f"Implement milestone {min(stage, 9) + 1} of 10 for this benign developer tool.\n"
         f"Project: {json.dumps(idea, ensure_ascii=False)}\n"
         f"Milestone: {milestone}\n"
         f"Existing file paths and short contents: {json.dumps(existing_files, ensure_ascii=False)}\n\n"

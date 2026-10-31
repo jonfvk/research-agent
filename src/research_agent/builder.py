@@ -60,6 +60,14 @@ class BuildError(RuntimeError):
     """Project build stopped without claiming a successful publication."""
 
 
+class TestFailure(BuildError):
+    __test__ = False
+
+    def __init__(self, message: str, output: str):
+        super().__init__(message)
+        self.output = output
+
+
 def _git(directory: Path, *args: str, env: dict | None = None) -> str:
     try:
         result = subprocess.run(
@@ -139,7 +147,7 @@ def _read_existing(root: Path) -> list[dict[str, str]]:
     return files
 
 
-def _safe_test(root: Path) -> None:
+def _safe_test(root: Path) -> str:
     sandbox_exec = shutil.which("sandbox-exec")
     if sys.platform != "darwin" or sandbox_exec is None:
         raise BuildError("A macOS sandbox is required; generated tests were not run.")
@@ -207,9 +215,11 @@ def _safe_test(root: Path) -> None:
         except (OSError, subprocess.SubprocessError):
             raise BuildError("Sandboxed test run failed to start or timed out.") from None
         if result.returncode:
-            raise BuildError(
-                f"Sandboxed tests failed (exit code {result.returncode}); project was not pushed."
+            raise TestFailure(
+                f"Sandboxed tests failed (exit code {result.returncode}); project was not pushed.",
+                (result.stderr or result.stdout)[-1500:],
             )
+        return ""
 
 
 def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str | int]:
@@ -234,35 +244,58 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
     _git(root, "init", "--initial-branch=main")
     _git(root, "remote", "add", "origin", repository["clone_url"])
 
-    created_paths: set[str] = set()
+    contents: dict[str, str] = {}
+
+    def commit_stage(stage: int, feedback: str = "") -> str:
+        """Generate, validate (with retries) and commit one change; returns error text."""
+        error = feedback
+        for _ in range(3):
+            result = implementation_stage(
+                idea, stage, _read_existing(root), model=model, feedback=error
+            )
+            try:
+                relative = _allowed_path(result["path"])
+                key = relative.as_posix()
+                _validate_content(relative, result["content"])
+                if contents.get(key) == result["content"]:
+                    raise BuildError("The change is identical to the existing file.")
+                message = _clean_commit_message(result["commit_message"])
+                if not _COMMIT.fullmatch(message):
+                    raise BuildError("Generated commit message is invalid.")
+            except BuildError as problem:
+                error = str(problem)
+                continue
+            target = root / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(result["content"], encoding="utf-8")
+            contents[key] = result["content"]
+            _git(root, "add", "--", key)
+            _git(
+                root,
+                "commit",
+                "-m",
+                message,
+                "-m",
+                "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
+            )
+            return ""
+        raise BuildError(f"Stage {stage + 1} failed after 3 attempts: {error}")
+
     for stage in range(10):
-        result = implementation_stage(idea, stage, _read_existing(root), model=model)
-        relative = _allowed_path(result["path"])
-        key = relative.as_posix()
-        if key in created_paths:
-            raise BuildError("Each implementation milestone must add a distinct file.")
-        _validate_content(relative, result["content"])
-        message = _clean_commit_message(result["commit_message"])
-        if not _COMMIT.fullmatch(message):
-            raise BuildError("Generated commit message is invalid.")
-        target = root / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(result["content"], encoding="utf-8")
-        created_paths.add(key)
-        _git(root, "add", "--", key)
-        _git(
-            root,
-            "commit",
-            "-m",
-            message,
-            "-m",
-            "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
-        )
+        commit_stage(stage)
 
     count = int(_git(root, "rev-list", "--count", "HEAD"))
     if count < 10:
         raise BuildError("Fewer than ten real implementation commits were created.")
-    _safe_test(root)
+    for attempt in range(4):
+        try:
+            _safe_test(root)
+            break
+        except TestFailure as failure:
+            if attempt == 3:
+                raise
+            commit_stage(10, feedback=f"Tests failed:\n{failure.output}")
+            count += 1
     _git(root, "push", "--set-upstream", "origin", "main")
     return {
         "repository": repository["html_url"],
