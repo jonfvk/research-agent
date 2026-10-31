@@ -275,8 +275,6 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
                 "commit",
                 "-m",
                 message,
-                "-m",
-                "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
             )
             return ""
         raise BuildError(f"Stage {stage + 1} failed after 3 attempts: {error}")
