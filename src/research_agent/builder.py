@@ -28,6 +28,21 @@ _BLOCKED_CALLS = {"eval", "exec", "compile", "__import__", "open_url"}
 _BLOCKED_ATTRS = {"system", "popen", "spawn", "urlopen", "urlretrieve", "rmtree"}
 
 
+def _third_party_import(tree: ast.AST, local: frozenset[str]) -> str | None:
+    allowed = set(sys.stdlib_module_names) | set(local)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and not node.level:
+            names = [node.module or ""]
+        else:
+            continue
+        for name in names:
+            if name.split(".")[0] not in allowed:
+                return name
+    return None
+
+
 def _blocked_reason(tree: ast.AST) -> str | None:
     for node in ast.walk(tree):
         names = []
@@ -114,7 +129,7 @@ def _allowed_path(raw_path: str) -> Path:
     return Path(*path.parts)
 
 
-def _validate_content(path: Path, content: str) -> None:
+def _validate_content(path: Path, content: str, local: frozenset[str] = frozenset({"src"})) -> None:
     if not isinstance(content, str) or not content.strip() or len(content.encode()) > 80_000:
         raise BuildError("Generated file is empty or exceeds the size limit.")
     if re.search(r"(?i)(?:api[_-]?key|secret[_-]?key|password)\s*=\s*['\"][^'\"]{8,}", content):
@@ -124,6 +139,12 @@ def _validate_content(path: Path, content: str) -> None:
             tree = ast.parse(content)
         except SyntaxError:
             raise BuildError("Generated Python file has a syntax error.") from None
+        outside = _third_party_import(tree, local)
+        if outside:
+            raise BuildError(
+                f"Import of '{outside}' is not allowed: only the Python standard library "
+                "and this project's own modules are installed. Do not use third-party packages."
+            )
         reason = _blocked_reason(tree)
         if reason or _SECRET.search(content):
             raise BuildError(
@@ -256,7 +277,16 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
             try:
                 relative = _allowed_path(result["path"])
                 key = relative.as_posix()
-                _validate_content(relative, result["content"])
+                local = {"src", relative.stem}
+                if len(relative.parts) == 3:
+                    local.add(relative.parts[1])
+                for found in (root / "src").glob("*"):
+                    local.add(found.stem)
+                    for inner in found.glob("*.py") if found.is_dir() else ():
+                        local.add(inner.stem)
+                for found in (root / "tests").glob("*.py"):
+                    local.add(found.stem)
+                _validate_content(relative, result["content"], frozenset(local))
                 if contents.get(key) == result["content"]:
                     raise BuildError("The change is identical to the existing file.")
                 message = _clean_commit_message(result["commit_message"])

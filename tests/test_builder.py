@@ -74,6 +74,14 @@ class BuilderSafetyTests(unittest.TestCase):
         from research_agent.builder import _clean_commit_message
         self.assertEqual(_clean_commit_message("\u2728 Add parser, v2!\nbody"), "Add parser v2")
 
+    def test_rejects_third_party_imports_but_allows_stdlib_and_local(self):
+        with self.assertRaisesRegex(BuildError, "PIL"):
+            _validate_content(Path("src/tool/core.py"), "from PIL import Image\n")
+        _validate_content(
+            Path("src/tool/core.py"),
+            "import json\nfrom src.tool import parser\nfrom . import x\n",
+        )
+
     def test_rejects_python_syntax_error_and_oversize(self):
         with self.assertRaisesRegex(BuildError, "syntax"):
             _validate_content(Path("src/tool/core.py"), "def broken(:\n")
