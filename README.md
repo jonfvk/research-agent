@@ -32,14 +32,18 @@ argument, a URL, or a file. Git push credentials use macOS Keychain's Git
 credential helper. `gh auth status` is separate and is not required.
 
 Credentials previously set up in Codex-AgentBuild can be migrated into this
-project's Keychain namespace without displaying values:
+project's Keychain namespace without displaying values. The migration copies
+GitHub and OpenAI credentials, but deliberately does not copy an exposed Tavily
+key:
 
 ```sh
 .venv/bin/python -m research_agent.cli credentials migrate
+.venv/bin/python -m research_agent.cli credentials setup-tavily
 ```
 
-The migration verifies each copied value before reporting success and does not
-delete the original Keychain entries.
+Rotate the Tavily key in Tavily's account settings before entering the new key.
+The migration verifies copied values and does not delete original Keychain
+entries.
 
 ## Research and model
 
@@ -53,16 +57,32 @@ content is treated as untrusted. Never execute arbitrary generated install
 scripts, shell commands, network clients, or repository workflows. Do not
 publish a project if required safety checks cannot be completed.
 
-## Scheduling
+## Run and schedule
 
-The intended local schedule is 08:00 daily while the Mac is awake and the user
-is logged in. Scheduling requires an explicit `install-schedule` command; it is
-not installed merely by setting up credentials. The process must stop safely
-and report failures rather than claiming that a project was built or pushed
-when it was not.
+Run a batch manually:
 
-## Current implementation status
+```sh
+.venv/bin/python -m research_agent.cli run
+```
 
-This repository is being built incrementally. The checked-in command and
-documentation are the source of truth; do not assume future autonomous build
-or scheduler features exist until their tests pass.
+Install the daily 08:00 local schedule after credentials are configured:
+
+```sh
+.venv/bin/python -m research_agent.cli install-schedule
+```
+
+Remove it with `.venv/bin/python -m research_agent.cli remove-schedule`. The
+LaunchAgent runs only while the Mac is awake and the user is logged in. Each
+date is limited to one batch to avoid duplicate repository creation. If a batch
+is incomplete, inspect its report under
+`~/Library/Application Support/ResearchAgent/` before making changes.
+
+Generated tests run from an isolated temporary copy in a macOS `sandbox-exec`
+profile with network denied, write access limited to that copy, and no
+Keychain-service access. The Git checkout and its hooks are not exposed to the
+test process. If macOS sandboxing is unavailable, the project is not pushed.
+
+OpenAI usage is bounded to one five-idea planning call and at most ten
+implementation calls per project, each with a response-token limit. Provider
+usage may incur charges; review your OpenAI and Tavily usage policies and
+account limits before installing the schedule.

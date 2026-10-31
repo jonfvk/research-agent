@@ -44,7 +44,7 @@ def search_trends(*, topic: str = "AI developer tools coding agents") -> list[di
         raise ResearchError(f"Trend search failed: {error}") from None
 
 
-def _openai_json(prompt: str, *, model: str, max_tokens: int = 4000) -> str:
+def _openai_json(prompt: str, *, model: str, max_tokens: int = 2500) -> str:
     try:
         _, body, _ = json_request(
             "https://api.openai.com/v1/chat/completions",
@@ -93,7 +93,7 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
         f"Search evidence:\n{json.dumps(results, ensure_ascii=False)}"
     )
     try:
-        response = json.loads(_openai_json(prompt, model=model))
+        response = json.loads(_openai_json(prompt, model=model, max_tokens=3000))
         ideas = response["ideas"]
     except (KeyError, TypeError, json.JSONDecodeError):
         raise ResearchError("Could not parse the five-project plan.") from None
@@ -158,7 +158,7 @@ def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, 
         "Include source URLs and dates in README.md. Keep all paths relative."
     )
     try:
-        result = json.loads(_openai_json(prompt, model=model, max_tokens=5000))
+        result = json.loads(_openai_json(prompt, model=model, max_tokens=2500))
     except json.JSONDecodeError:
         raise ResearchError("Implementation model returned invalid JSON.") from None
     if not isinstance(result, dict) or not all(

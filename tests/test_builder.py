@@ -1,10 +1,35 @@
+import shutil
+import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-from research_agent.builder import BuildError, _allowed_path, _validate_content
+from research_agent.builder import BuildError, _allowed_path, _safe_test, _validate_content
 
 
 class BuilderSafetyTests(unittest.TestCase):
+    @unittest.skipUnless(
+        sys.platform == "darwin" and shutil.which("sandbox-exec"),
+        "requires macOS sandbox-exec",
+    )
+    def test_sandbox_runs_tests_without_exposing_checkout_for_writes(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "project"
+            tests = root / "tests"
+            tests.mkdir(parents=True)
+            outside = root / "outside.txt"
+            test_source = (
+                "import unittest\nfrom pathlib import Path\n"
+                "class SandboxTest(unittest.TestCase):\n"
+                "    def test_cannot_write_checkout(self):\n"
+                f"        with self.assertRaises(PermissionError): Path({str(outside)!r}).write_text('escape')\n"
+            )
+            (tests / "test_sandbox.py").write_text(test_source, encoding="utf-8")
+
+            _safe_test(root)
+
+            self.assertFalse(outside.exists())
+
     def test_allowed_project_paths(self):
         for value in (
             "README.md",

@@ -70,12 +70,18 @@ def status() -> dict[str, bool]:
         raise CredentialError("Keychain credential status could not be read.") from None
 
 
-def migrate_legacy_credentials() -> dict[str, bool]:
+def migrate_legacy_credentials(
+    *, exclude_accounts: set[str] | None = None
+) -> dict[str, bool]:
     """Copy the prior setup to this app's namespace and verify each value."""
     backend = _backend()
+    excluded = exclude_accounts or set()
     migrated: dict[str, bool] = {}
     try:
         for label, account in ACCOUNTS.items():
+            if account in excluded:
+                migrated[label] = bool(backend.get_password(SERVICE, account))
+                continue
             old = backend.get_password(LEGACY_SERVICE, account)
             if old is None:
                 migrated[label] = bool(backend.get_password(SERVICE, account))
@@ -95,6 +101,18 @@ def migrate_legacy_credentials() -> dict[str, bool]:
     except Exception:
         raise CredentialError("Credential migration failed; original entries were not deleted.") from None
     return migrated
+
+
+def setup_tavily() -> None:
+    _require_interactive_terminal()
+    print("Enter a newly rotated Tavily key. Input is hidden.")
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", getpass.GetPassWarning)
+            value = getpass.getpass("Tavily API key: ")
+        store(TAVILY_ACCOUNT, value)
+    except (KeyboardInterrupt, EOFError, getpass.GetPassWarning):
+        raise CredentialError("Tavily credential setup cancelled.") from None
 
 
 def _require_interactive_terminal() -> None:

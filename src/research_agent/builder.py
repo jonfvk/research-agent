@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 
 from research_agent.github import create_public_repository
 from research_agent.research import implementation_stage
@@ -106,53 +107,73 @@ def _safe_test(root: Path) -> None:
     sandbox_exec = shutil.which("sandbox-exec")
     if sys.platform != "darwin" or sandbox_exec is None:
         raise BuildError("A macOS sandbox is required; generated tests were not run.")
-    prefixes = sorted({str(Path(sys.prefix).resolve()), str(Path(sys.base_prefix).resolve())})
-    project = json.dumps(str(root.resolve()))
-    python_paths = " ".join(f"(subpath {json.dumps(path)})" for path in prefixes)
-    profile = (
-        "(version 1)\n"
-        "(deny default)\n"
-        "(allow process*)\n"
-        f"(allow file-read* {python_paths} (subpath \"/System/Library\") "
-        "(subpath \"/usr/lib\") (subpath \"/usr/local/lib\") "
-        f"(subpath {project}))\n"
-        f"(allow file-write* (subpath {project}) (literal \"/dev/null\"))\n"
-        "(allow sysctl-read)\n"
-    )
-    env = {
-        "PATH": os.path.dirname(sys.executable),
-        "HOME": str(root / ".test-home"),
-        "TMPDIR": str(root / ".test-tmp"),
-        "PYTHONNOUSERSITE": "1",
-        "PYTHONDONTWRITEBYTECODE": "1",
-        "PYTHONPATH": str(root),
-    }
-    (root / ".test-home").mkdir(exist_ok=True)
-    (root / ".test-tmp").mkdir(exist_ok=True)
-    command = [
-        sandbox_exec,
-        "-p",
-        profile,
-        sys.executable,
-        "-m",
-        "unittest",
-        "discover",
-        "-s",
-        "tests",
-    ]
-    try:
-        result = subprocess.run(
-            command,
-            cwd=root,
-            env=env,
-            capture_output=True,
-            text=True,
-            timeout=120,
+    interpreter = Path(sys.base_prefix) / "bin" / f"python{sys.version_info.major}.{sys.version_info.minor}"
+    if not interpreter.is_file():
+        raise BuildError("A direct Python interpreter is required; generated tests were not run.")
+    prefixes = [str(Path(sys.base_prefix).resolve())]
+    with tempfile.TemporaryDirectory(
+        prefix=".research-agent-test-", dir=root.parent
+    ) as temporary:
+        isolated_root = Path(temporary) / "project"
+        shutil.copytree(
+            root,
+            isolated_root,
+            ignore=shutil.ignore_patterns(".git", ".test-home", ".test-tmp"),
         )
-    except (OSError, subprocess.SubprocessError):
-        raise BuildError("Sandboxed test run failed to start or timed out.") from None
-    if result.returncode:
-        raise BuildError("Sandboxed tests failed; project was not pushed.")
+        project = json.dumps(str(isolated_root.resolve()))
+        python_paths = " ".join(
+            f"(subpath {json.dumps(path)})" for path in prefixes
+        )
+        profile = (
+            "(version 1)\n"
+            "(deny default)\n"
+            "(allow process*)\n"
+            "(allow file-read-data (literal \"/\"))\n"
+            "(allow file-read-metadata (literal \"/\"))\n"
+            "(allow file-read-metadata (subpath \"/Library\"))\n"
+            f"(allow file-read* {python_paths} (subpath \"/System/Library\") "
+            "(subpath \"/usr/lib\") "
+            f"(subpath {project}))\n"
+            f"(allow file-write* (subpath {project}) (literal \"/dev/null\"))\n"
+            "(allow sysctl-read)\n"
+        )
+        env = {
+            "PATH": os.path.dirname(sys.executable),
+            "HOME": str(isolated_root / ".test-home"),
+            "TMPDIR": str(isolated_root / ".test-tmp"),
+            "PYTHONNOUSERSITE": "1",
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(isolated_root),
+        }
+        (isolated_root / ".test-home").mkdir()
+        (isolated_root / ".test-tmp").mkdir()
+        command = [
+            sandbox_exec,
+            "-p",
+            profile,
+            str(interpreter),
+            "-S",
+            "-m",
+            "unittest",
+            "discover",
+            "-s",
+            "tests",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                cwd=isolated_root,
+                env=env,
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+        except (OSError, subprocess.SubprocessError):
+            raise BuildError("Sandboxed test run failed to start or timed out.") from None
+        if result.returncode:
+            raise BuildError(
+                f"Sandboxed tests failed (exit code {result.returncode}); project was not pushed."
+            )
 
 
 def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str | int]:

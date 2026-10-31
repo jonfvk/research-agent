@@ -157,6 +157,7 @@ def main(argv: list[str] | None = None) -> int:
     credential_parser = subparsers.add_parser("credentials")
     credential_sub = credential_parser.add_subparsers(dest="credential_command", required=True)
     credential_sub.add_parser("setup")
+    credential_sub.add_parser("setup-tavily")
     credential_sub.add_parser("status")
     credential_sub.add_parser("migrate")
 
@@ -182,11 +183,21 @@ def main(argv: list[str] | None = None) -> int:
                 if configured["github"]:
                     print(f"github account: {github.authenticated_login()}")
                 return 0
+            if args.credential_command == "setup-tavily":
+                credentials.setup_tavily()
+                print("New Tavily credential stored in macOS Keychain.")
+                return 0
             if args.credential_command == "migrate":
-                migrated = credentials.migrate_legacy_credentials()
+                migrated = credentials.migrate_legacy_credentials(
+                    exclude_accounts={credentials.TAVILY_ACCOUNT}
+                )
                 for name, present in migrated.items():
-                    print(f"{name}: {'migrated or already configured' if present else 'not available'}")
-                if not all(migrated.values()):
+                    if name == "tavily":
+                        message = "fresh rotated key required"
+                    else:
+                        message = "migrated or already configured" if present else "not available"
+                    print(f"{name}: {message}")
+                if not migrated["github"] or not migrated["openai"]:
                     return 1
                 login = github.authenticated_login()
                 credentials.store_git_credential(

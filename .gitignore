@@ -19,3 +19,5 @@ build/
 dist/
 generated/
 state/
+.test-home/
+.test-tmp/

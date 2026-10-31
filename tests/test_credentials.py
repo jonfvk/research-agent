@@ -49,6 +49,42 @@ class CredentialTests(unittest.TestCase):
                 credentials.migrate_legacy_credentials()
         backend.set_password.assert_not_called()
 
+    def test_migration_can_skip_tavily_rotation(self):
+        backend = Mock()
+        values = {
+            (credentials.LEGACY_SERVICE, account): f"legacy-{label}"
+            for label, account in credentials.ACCOUNTS.items()
+        }
+        backend.get_password.side_effect = lambda service, account: values.get(
+            (service, account)
+        )
+        backend.set_password.side_effect = (
+            lambda service, account, value: values.__setitem__(
+                (service, account), value
+            )
+        )
+        with patch.object(credentials, "_backend", return_value=backend):
+            result = credentials.migrate_legacy_credentials(
+                exclude_accounts={credentials.TAVILY_ACCOUNT}
+            )
+
+        self.assertEqual(result, {"github": True, "openai": True, "tavily": False})
+        self.assertEqual(backend.set_password.call_count, 2)
+        self.assertNotIn(
+            (credentials.SERVICE, credentials.TAVILY_ACCOUNT),
+            values,
+        )
+
+    def test_setup_tavily_prompts_without_echo(self):
+        with (
+            patch.object(credentials.sys.stdin, "isatty", return_value=True),
+            patch.object(credentials.sys.stderr, "isatty", return_value=True),
+            patch.object(credentials.getpass, "getpass", return_value="rotated-tavily-key"),
+            patch.object(credentials, "store") as store,
+        ):
+            credentials.setup_tavily()
+        store.assert_called_once_with(credentials.TAVILY_ACCOUNT, "rotated-tavily-key")
+
 
 if __name__ == "__main__":
     unittest.main()
