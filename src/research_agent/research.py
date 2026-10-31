@@ -158,6 +158,9 @@ def implementation_stage(idea: dict, stage: int, existing_files: list[dict[str, 
         "README.md, pyproject.toml, .gitignore, src/<package>/<file>.py, "
         "tests/test_<name>.py, and docs/<name>.md. Never output shell scripts, "
         "workflow files, network exploit code, credential handling, or commands. "
+        "Use only the Python standard library; the code must be fully offline (no network, subprocess, "
+        "file deletion, or dynamic code execution) and tests must use unittest. "
+        "commit_message must be plain ASCII, imperative, under 60 characters. "
         "Include source URLs and dates in README.md. Keep all paths relative."
     )
     try:

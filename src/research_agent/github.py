@@ -83,3 +83,30 @@ def create_public_repository(name: str, description: str) -> dict[str, str]:
         }
     except (KeyError, TypeError):
         raise GitHubError("GitHub returned an incomplete repository response.") from None
+
+
+def obtain_repository(name: str, description: str) -> dict[str, str]:
+    """Create the repo, or reuse one of ours that is still empty from a failed run."""
+    try:
+        return create_public_repository(name, description)
+    except GitHubError as error:
+        if "HTTP 422" not in str(error):
+            raise
+    owner = authenticated_login()
+    path = f"/repos/{quote(owner, safe='')}/{quote(name, safe='')}"
+    _, repo = _api(path)
+    try:
+        _api(f"{path}/commits?per_page=1")
+    except GitHubError as error:
+        if "HTTP 409" not in str(error):
+            raise
+    else:
+        raise GitHubError("Repository already exists and has commits; refusing to reuse it.")
+    try:
+        return {
+            "full_name": repo["full_name"],
+            "html_url": repo["html_url"],
+            "clone_url": repo["clone_url"],
+        }
+    except (KeyError, TypeError):
+        raise GitHubError("GitHub returned an incomplete repository response.") from None

@@ -60,9 +60,19 @@ class BuilderSafetyTests(unittest.TestCase):
             "import socket\n",
             "eval('1 + 1')\n",
             "import keyring\n",
+            "import os\nos.system('x')\n",
+            "from urllib.request import urlopen\n",
+            "from urllib import request\n",
         ):
             with self.subTest(content=content), self.assertRaises(BuildError):
                 _validate_content(Path("src/tool/core.py"), content)
+
+    def test_allows_harmless_words_in_text(self):
+        _validate_content(Path("src/tool/core.py"), '"""Execute and exec the plan; request data."""\nimport urllib.parse\n')
+
+    def test_commit_message_is_sanitized(self):
+        from research_agent.builder import _clean_commit_message
+        self.assertEqual(_clean_commit_message("\u2728 Add parser, v2!\nbody"), "Add parser v2")
 
     def test_rejects_python_syntax_error_and_oversize(self):
         with self.assertRaisesRegex(BuildError, "syntax"):

@@ -10,17 +10,50 @@ import subprocess
 import sys
 import tempfile
 
-from research_agent.github import create_public_repository
+from research_agent.github import obtain_repository
 from research_agent.research import implementation_stage
 
 _REPO = re.compile(r"^[a-z0-9][a-z0-9-]{0,62}$")
 _COMMIT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9 ._():/-]{0,71}$")
 _PYTHON_FILE = re.compile(r"^[a-z][a-z0-9_]*\.py$")
-_BLOCKED = re.compile(
-    r"(?i)\b(subprocess|socket|http\.client|urllib\.request|requests|"
-    r"os\.system|eval|exec|pickle|keyring|dotenv)\b|"
+_SECRET = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|tvly-[A-Za-z0-9_-]{16,})"
 )
+_BLOCKED_MODULES = {
+    "subprocess", "socket", "http", "urllib3", "requests", "httpx", "aiohttp",
+    "pickle", "marshal", "keyring", "dotenv", "ctypes", "importlib", "ftplib",
+    "smtplib", "telnetlib", "xmlrpc", "multiprocessing", "pty", "shutil",
+}
+_BLOCKED_CALLS = {"eval", "exec", "compile", "__import__", "open_url"}
+_BLOCKED_ATTRS = {"system", "popen", "spawn", "urlopen", "urlretrieve", "rmtree"}
+
+
+def _blocked_reason(tree: ast.AST) -> str | None:
+    for node in ast.walk(tree):
+        names = []
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = [node.module or ""]
+            if node.module == "urllib" and any(a.name == "request" for a in node.names):
+                return "urllib.request"
+        for name in names:
+            if name.split(".")[0] in _BLOCKED_MODULES or name == "urllib.request":
+                return name
+        if isinstance(node, ast.Call):
+            func = node.func
+            if isinstance(func, ast.Name) and func.id in _BLOCKED_CALLS:
+                return func.id
+            if isinstance(func, ast.Attribute) and func.attr in _BLOCKED_ATTRS:
+                return func.attr
+    return None
+
+
+def _clean_commit_message(raw: str) -> str:
+    line = raw.strip().splitlines()[0] if raw.strip() else ""
+    line = re.sub(r"[^A-Za-z0-9 ._():/-]", " ", line)
+    line = re.sub(r"\s+", " ", line).strip()[:72].strip()
+    return line
 
 
 class BuildError(RuntimeError):
@@ -76,15 +109,18 @@ def _allowed_path(raw_path: str) -> Path:
 def _validate_content(path: Path, content: str) -> None:
     if not isinstance(content, str) or not content.strip() or len(content.encode()) > 80_000:
         raise BuildError("Generated file is empty or exceeds the size limit.")
-    if path.suffix == ".py" and _BLOCKED.search(content):
-        raise BuildError("Generated file contains a disallowed execution, network, or credential pattern.")
     if re.search(r"(?i)(?:api[_-]?key|secret[_-]?key|password)\s*=\s*['\"][^'\"]{8,}", content):
         raise BuildError("Generated file appears to contain a hard-coded secret.")
     if path.suffix == ".py":
         try:
-            ast.parse(content)
+            tree = ast.parse(content)
         except SyntaxError:
             raise BuildError("Generated Python file has a syntax error.") from None
+        reason = _blocked_reason(tree)
+        if reason or _SECRET.search(content):
+            raise BuildError(
+                f"Generated file uses a disallowed execution, network, or credential pattern ({reason or 'secret'})."
+            )
 
 
 def _read_existing(root: Path) -> list[dict[str, str]]:
@@ -193,7 +229,7 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
     else:
         raise BuildError("Project workspace is inside a Git repository; refusing nested checkouts.")
 
-    repository = create_public_repository(name, idea["description"])
+    repository = obtain_repository(name, idea["description"])
     root.mkdir(mode=0o700)
     _git(root, "init", "--initial-branch=main")
     _git(root, "remote", "add", "origin", repository["clone_url"])
@@ -206,7 +242,7 @@ def build_project(idea: dict, *, model: str = "gpt-4.1-mini") -> dict[str, str |
         if key in created_paths:
             raise BuildError("Each implementation milestone must add a distinct file.")
         _validate_content(relative, result["content"])
-        message = result["commit_message"].strip().splitlines()[0]
+        message = _clean_commit_message(result["commit_message"])
         if not _COMMIT.fullmatch(message):
             raise BuildError("Generated commit message is invalid.")
         target = root / relative
