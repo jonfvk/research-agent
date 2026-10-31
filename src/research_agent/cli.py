@@ -14,7 +14,14 @@ from research_agent import credentials, github, research
 from research_agent.builder import BuildError, build_project
 
 LABEL = "com.jonfvk.research-agent"
-MAX_PROJECTS = 5
+PROJECTS_PER_BATCH = 5
+MAX_BATCHES = 4
+TOPICS = [
+    "AI developer tools coding agents",
+    "LLM evaluation testing observability",
+    "AI agent frameworks MCP tooling",
+    "developer productivity documentation code review AI",
+]
 
 
 def _app_support() -> Path:
@@ -23,7 +30,8 @@ def _app_support() -> Path:
     return path
 
 
-def _run_batch(model: str) -> int:
+def _run_batch(model: str, batches: int = 1) -> int:
+    total = batches * PROJECTS_PER_BATCH
     lock_path = _app_support() / "run.lock"
     with lock_path.open("a") as lock_file:
         try:
@@ -41,50 +49,54 @@ def _run_batch(model: str) -> int:
             )
             return 1
 
-        print("Searching current AI developer trends...")
-        sources = research.search_trends()
-        ideas = research.select_projects(sources, model=model)
         report = {
             "date": date.today().isoformat(),
             "status": "in_progress",
-            "sources": [
-                {"title": source["title"], "url": source["url"],
-                 "published_date": source["published_date"]}
-                for source in sources
-            ],
+            "sources": [],
             "projects": [],
         }
         report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-        for index, idea in enumerate(ideas[:MAX_PROJECTS], start=1):
-            entry = {"name": idea["name"], "title": idea["title"], "status": "building"}
-            report["projects"].append(entry)
-            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
-            print(f"[{index}/{MAX_PROJECTS}] Building {idea['name']}...")
+        used: set[str] = set()
+        for batch in range(batches):
+            print(f"Searching current AI developer trends (batch {batch + 1}/{batches})...")
             try:
-                result = build_project(idea, model=model)
-                entry.update(
-                    status="published",
-                    repository=result["repository"],
-                    checkout=result["checkout"],
-                    commits=result["commits"],
-                )
-                print(
-                    f"Published {result['repository']} "
-                    f"({result['commits']} commits)."
-                )
-            except (
-                BuildError,
-                github.GitHubError,
-                research.ResearchError,
-                OSError,
-                ValueError,
-            ) as error:
-                entry.update(status="failed", error=str(error)[:500])
-                print(f"{idea['name']} did not complete: {error}", file=sys.stderr)
-            report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+                sources = research.search_trends(topic=TOPICS[batch % len(TOPICS)])
+                ideas = research.select_projects(sources, model=model, avoid=used)
+            except research.ResearchError as error:
+                print(f"Batch {batch + 1} planning failed: {error}", file=sys.stderr)
+                break
+            report["sources"] += [
+                {"title": s["title"], "url": s["url"], "published_date": s["published_date"]}
+                for s in sources
+            ]
+            for idea in ideas[:PROJECTS_PER_BATCH]:
+                used.add(idea["name"])
+                entry = {"name": idea["name"], "title": idea["title"], "status": "building"}
+                report["projects"].append(entry)
+                report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
+                print(f"[{len(report['projects'])}/{total}] Building {idea['name']}...")
+                try:
+                    result = build_project(idea, model=model)
+                    entry.update(
+                        status="published",
+                        repository=result["repository"],
+                        checkout=result["checkout"],
+                        commits=result["commits"],
+                    )
+                    print(f"Published {result['repository']} ({result['commits']} commits).")
+                except (
+                    BuildError,
+                    github.GitHubError,
+                    research.ResearchError,
+                    OSError,
+                    ValueError,
+                ) as error:
+                    entry.update(status="failed", error=str(error)[:500])
+                    print(f"{idea['name']} did not complete: {error}", file=sys.stderr)
+                report_path.write_text(json.dumps(report, indent=2), encoding="utf-8")
         report["status"] = (
             "completed"
-            if len(report["projects"]) == MAX_PROJECTS
+            if len(report["projects"]) == total
             and all(item["status"] == "published" for item in report["projects"])
             else "incomplete"
         )
@@ -163,6 +175,8 @@ def main(argv: list[str] | None = None) -> int:
 
     run_parser = subparsers.add_parser("run")
     run_parser.add_argument("--model", default="gpt-4.1-mini")
+    run_parser.add_argument("--batches", type=int, default=1, choices=range(1, MAX_BATCHES + 1),
+                            help="Batches of five projects (4 = 20 projects)")
     subparsers.add_parser("install-schedule")
     subparsers.add_parser("remove-schedule")
 
@@ -209,7 +223,7 @@ def main(argv: list[str] | None = None) -> int:
             if not all(credentials.status().values()):
                 print("GitHub, OpenAI, and Tavily credentials are required.", file=sys.stderr)
                 return 1
-            return _run_batch(args.model)
+            return _run_batch(args.model, args.batches)
         if args.command == "install-schedule":
             return install_schedule()
         if args.command == "remove-schedule":

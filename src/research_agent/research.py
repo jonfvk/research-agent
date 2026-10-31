@@ -79,7 +79,9 @@ def _openai_json(prompt: str, *, model: str, max_tokens: int = 2500) -> str:
         raise ResearchError("OpenAI returned an invalid response.") from None
 
 
-def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini") -> list[dict]:
+def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini",
+                    avoid: set[str] | None = None) -> list[dict]:
+    avoid = avoid or set()
     prompt = (
         f"Today's date is {date.today().isoformat()}. From these search results, "
         "select five distinct, realistic AI developer project ideas suitable for "
@@ -90,6 +92,7 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
         "and `source_urls` (one or more URLs from the evidence). Use unique slugs "
         "containing lowercase letters, digits, and dashes. Ensure ideas differ "
         "substantially and cite only evidence actually present in these results.\n\n"
+        f"Do not reuse these existing project slugs: {sorted(avoid)}.\n\n"
         f"Search evidence:\n{json.dumps(results, ensure_ascii=False)}"
     )
     try:
@@ -108,7 +111,7 @@ def select_projects(results: list[dict[str, str]], *, model: str = "gpt-4.1-mini
         name = idea["name"]
         if not isinstance(name, str) or not name.replace("-", "").isalnum() or name.lower() != name:
             raise ResearchError("Project slugs must be lowercase letters, digits, and dashes.")
-        if name in names:
+        if name in names or name in avoid:
             raise ResearchError("Project slugs must be unique.")
         names.add(name)
         title = idea["title"]
