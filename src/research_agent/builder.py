@@ -125,7 +125,11 @@ def _allowed_path(raw_path: str) -> Path:
         or (len(path.parts) == 2 and path.parts[0] == "docs" and path.suffix == ".md")
     )
     if not allowed:
-        raise BuildError("Generated file path is outside the allowed source, test, or documentation areas.")
+        raise BuildError(
+            f"Path '{raw_path}' is not allowed. Use exactly one of: README.md, pyproject.toml, "
+            ".gitignore, src/<package>/<file>.py (no subfolders), tests/test_<name>.py "
+            "(no subfolders, no conftest.py), docs/<name>.md."
+        )
     return Path(*path.parts)
 
 
